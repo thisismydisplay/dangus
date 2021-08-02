@@ -1,3 +1,9 @@
+# Code borrowed with major modifications from
+# https://towardsdatascience.com/how-to-use-the-reddit-api-in-python-5e05ddfd1e5c
+# 
+# Most important modification is that we are using a completely different API
+# route to get the access token.
+
 import config
 import os
 import requests
