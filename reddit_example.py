@@ -13,3 +13,18 @@ res = requests.get("https://oauth.reddit.com/api/v1/me", headers=headers)
 
 pprint("GET https://oauth.reddit.com/api/v1/me result:")
 pprint(res.json())
+
+# Use the reddit API to get the first 10 posts from the cryptocurrency subreddit
+params = {"limit": 10}
+res = requests.get(
+    "https://oauth.reddit.com/r/cryptocurrency/hot/", headers=headers, params=params
+)
+
+pprint("GET https://oauth.reddit.com/r/cryptocurrency/hot/ result:")
+pprint(res.json())
+print("\n\n\n\n")
+pprint("Top post of /r/cryptocurrency/ is:")
+pprint(res.json()["data"]["children"][0]["data"])
+print("\n\n\n\n")
+pprint("Title of top post of /r/cryptocurrency/ is:")
+pprint(res.json()["data"]["children"][0]["data"]["title"])
