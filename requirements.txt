@@ -53,6 +53,8 @@ google-auth-oauthlib==0.4.4
     # via tensorboard
 grpcio==1.38.1
     # via tensorboard
+gunicorn==20.1.0
+    # via -r requirements.in
 huggingface-hub==0.0.12
     # via transformers
 idna==3.2

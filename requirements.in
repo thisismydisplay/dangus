@@ -7,3 +7,4 @@ torch==1.9.0+cpu
 aitextgen
 python-dotenv
 black
+gunicorn
