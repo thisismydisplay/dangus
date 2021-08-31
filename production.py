@@ -1,7 +1,8 @@
 from flask import request
 import logging
 import sys
-# from aimodel import ai, ai2
+
+from aimodel import ai2
 import numpy as np
 import requests
 import json
@@ -15,6 +16,7 @@ btc_previous = []
 tired_responses = [
     "Don't let the nap get the best of you",
     "SLEEP",
+    "dude",
     "idk have you tried more coffee?",
     "Each night, when I go to sleep, I die.",
 ]
@@ -76,6 +78,7 @@ def makemusic():
     with open("music.mp3", "w+") as fp:
         fp.write("this will be music for sure")
 
+
 class Bot:
     def __init__(self, bot_id):
         self.bot_id = bot_id
@@ -83,6 +86,7 @@ class Bot:
         self.other_bot_choice = None
         self.prompt_seed = None
         self.data = None
+        self.has_alerted_recently = False
 
     def run(self):
         self.btc_trawler()
@@ -115,14 +119,15 @@ class Bot:
         # pass
         # respond = ai.generate_one(prompt=prompt_seed, max_length=40, temperature=1.6)
         # self.say(respond)
-        elif num < 4:
-            pass
-            # respond = ai2.generate_one(prompt=prompt_seed, max_length=40, temperature=1.4)
-            # self.say(respond)
-
-            # logger.info(respond)
-            # self.say(ts_say())
-            # logger.info('t-s')
+        elif num < 3:
+            respond = ai2.generate_one(
+                prompt=self.prompt_seed, max_length=40, temperature=1.4
+            )
+            self.say(respond)
+            logger.info("ai")
+            logger.info(respond)
+        # self.say(ts_say())
+        # logger.info('t-s')
         elif num < 5:
             self.say(markov_say(ts_dict))
         elif num < 6:
@@ -150,7 +155,8 @@ class Bot:
     def say(self, message):
         try:
             r = requests.post(
-                "https://api.groupme.com/v3/bots/post", json={"bot_id": self.bot_id, "text": message}
+                "https://api.groupme.com/v3/bots/post",
+                json={"bot_id": self.bot_id, "text": message},
             )
             logger.info(r.status_code, r.reason)
         except:
@@ -174,29 +180,35 @@ class Bot:
             percent_change = (new_usd - old_usd) / old_usd
             logger.info(percent_change)
             format_float_test_btc_usd = "{:,.2f}".format(new_usd)
-            if percent_change > 0.05:
+            if percent_change > 0.03:
                 logger.info("inside >")
-                logger.info(
+                self.send_alert(
                     f"Value of Bitcoin has changed {'{:.2%}'.format(percent_change)}"
                     + f" in the last hour and is now USD is ${format_float_test_btc_usd}"
                 )
-                self.say(
-                    f"Value of Bitcoin has changed {'{:.2%}'.format(percent_change)}"
-                    + f" in the last hour and is now USD is ${format_float_test_btc_usd}"
-                )
-            elif percent_change < 0.05:
+            elif percent_change < -0.03:
                 logger.info("inside <")
-                logger.info(
-                    f"Value of Bitcoin has changed {'{:.2%}'.format(percent_change)}"
-                    + f" in the last hour and is now USD is ${format_float_test_btc_usd}"
-                )
-                self.say(
+                self.send_alert(
                     f"Value of Bitcoin has changed {'{:.2%}'.format(percent_change)}"
                     + f" in the last hour and is now USD is ${format_float_test_btc_usd}"
                 )
         t = threading.Timer(60, self.btc_trawler)
         t.start()
 
+    def send_alert(self, message):
+        if self.has_alerted_recently:
+            return
+
+        logger.info(message)
+        self.say(message)
+        self.has_alerted_recently = True
+
+        # Only alert every 4 hours
+        def reset_alert():
+            self.has_alerted_recently = False
+
+        t = threading.Timer(60 * 60 * 4, reset_alert)
+        t.start()
 
     def assign_flask_info(self):
         global btc_previous
