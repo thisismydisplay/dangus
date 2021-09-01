@@ -1,6 +1,3 @@
 {
-    "files.exclude": {
-        ".venv/**": true
-    },
     "python.formatting.provider": "black"
 }
