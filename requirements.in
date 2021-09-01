@@ -8,3 +8,4 @@ aitextgen
 python-dotenv
 black
 gunicorn
+ipython

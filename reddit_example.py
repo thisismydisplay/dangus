@@ -19,13 +19,14 @@ headers = {"User-Agent": "DangusBot/0.0.1", "Authorization": f"bearer {TOKEN}"}
 # # while the token is valid (~2 hours) we just add headers=headers to our requests
 res = requests.get("https://oauth.reddit.com/api/v1/me", headers=headers)
 
+# tell us about ourself
 pprint("GET https://oauth.reddit.com/api/v1/me result:")
 pprint(res.json())
 
 # Use the reddit API to get the first 10 posts from the cryptocurrency subreddit
-params = {"limit": 10}
+params = {"limit": 5, "article": "pfi20y", "sort": "top", "depth": 1}
 res = requests.get(
-    "https://oauth.reddit.com/r/cryptocurrency/hot/", headers=headers, params=params
+    "https://oauth.reddit.com/r/cryptocurrency/comments/article", headers=headers, params=params
 )
 
 pprint("GET https://oauth.reddit.com/r/cryptocurrency/hot/ result:")
