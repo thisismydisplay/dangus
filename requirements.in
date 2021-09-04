@@ -9,3 +9,4 @@ python-dotenv
 black
 gunicorn
 ipython
+praw

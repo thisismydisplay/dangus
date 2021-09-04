@@ -1,13 +1,13 @@
 from flask import request
 import logging
 import sys
-
+import os
 from aimodel import ai2
 import numpy as np
 import requests
 import json
 import re
-
+import praw
 # import os
 import random
 import threading
@@ -79,21 +79,58 @@ def makemusic():
         fp.write("this will be music for sure")
 
 
+class Reddit:
+    def __init__(self):
+        self.reddit=praw.Reddit(
+            client_id=os.environ.get("REDDIT_CLIENT_ID"),
+            client_secret=os.environ.get("REDDIT_SECRET_TOKEN"),
+            password=os.environ.get("REDDIT_PASSWORD"),
+            user_agent="dangusbot/0.0.1",
+            username=os.environ.get("REDDIT_USERNAME"),
+        )
+
+    def subreddit(self, subreddit_query):
+        subreddit = self.reddit.subreddit(subreddit_query)
+        top = list(subreddit.top(limit=1))[0]
+        return (top.title, top.permalink)
 class Bot:
-    def __init__(self, bot_id):
+    def __init__(self, bot_id, access_token, chat_filename):
         self.bot_id = bot_id
+        self.access_token = access_token
         self.message_text = None
         self.other_bot_choice = None
         self.prompt_seed = None
         self.data = None
         self.has_alerted_recently = False
+        self.group_id = None
+        self.fetch_group_id()
+        self.members = []
+        self.reddit = Reddit()
+        self.chat_filename = chat_filename
+
+        logger.info(f"reddit= {self.reddit.subreddit('learnpython')}")
+
+    def fetch_group_id(self):
+        params = {"token":self.access_token}
+        resp = requests.get("https://api.groupme.com/v3/bots", params=params)
+        data = resp.json()
+        
+        for bot in data["response"]:
+            
+            if bot["bot_id"] == self.bot_id:
+                self.group_id = bot["group_id"]
+
+        if self.group_id == None:
+            raise Exception("No group id found searching groupme")
+
 
     def run(self):
         self.btc_trawler()
+        self.get_current_members()
 
     def route(self):
         self.assign_flask_info()
-        
+        self.store_grouptext()
         num = random.randint(1, 10)
         if self.data["sender_type"] == "bot":
             return ""
@@ -101,6 +138,12 @@ class Bot:
             self.say(np.random.choice(tired_responses))
         elif not re.search("@dangus", self.data["text"]):
             return ""
+
+        elif re.search("subreddit (\w+)", self.data["text"]):
+            sub_call = re.search("subreddit (\w+)", self.data["text"])
+            title, permalink = self.reddit.subreddit(sub_call.group(1))
+            self.say(title)
+
         elif re.search("you suck", self.data["text"]):
             self.say("so do you")
         elif re.search("make music", self.data["text"]):
@@ -153,12 +196,20 @@ class Bot:
         return ""
 
     
-    '''
-    #TODO:write method to record group chat, to be trained as ai model for generating text.
-    def_write_chat(self):
-        with open("music.mp3", "a+") as chat_record:
-        chat_record.write(self.message_text +"\n")
-    '''
+    
+    def store_grouptext(self):
+        text_to_store = self.message_text
+        text_to_store = text_to_store.replace("@dingus", "")
+        text_to_store = text_to_store.replace("@dongus", "")
+        for nickname in self.members:
+            text_to_store = text_to_store.replace(f"@{nickname}", "")
+        text_to_store = text_to_store.lstrip(' ')
+        if self.data["sender_type"] == "bot":
+            return ""
+        else:
+            with open(self.chat_filename, "a+") as chat_record:
+                chat_record.write(text_to_store +"\n")
+    
     def say(self, message):
         try:
             r = requests.post(
@@ -202,6 +253,17 @@ class Bot:
         t = threading.Timer(60, self.btc_trawler)
         t.start()
 
+    def get_current_members(self):
+        params = {"token":self.access_token}
+        group_resp= requests.get(f"https://api.groupme.com/v3/groups/{self.group_id}", params=params)
+        
+        member_list = group_resp.json()["response"]["members"]
+        self.members = list(map(lambda x: x["nickname"], member_list))
+        logger.info(f"self.members = {self.members}")
+        t = threading.Timer(3600, self.get_current_members)
+        t.start()
+
+
     def send_alert(self, message):
         if self.has_alerted_recently:
             return
@@ -220,6 +282,7 @@ class Bot:
     def assign_flask_info(self):
         global btc_previous
         data = request.get_json()
+        # logger.info(f"data= {data}")
         other_bots = ["@dingus", "@dongus"]
         other_bot_choice = random.choice(other_bots)
         self.message_text = data["text"]

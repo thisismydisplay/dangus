@@ -132,3 +132,6 @@ dmypy.json
 start.sh
 .junk
 jukebox
+
+# Ignore chat logs
+chathistory*.txt
