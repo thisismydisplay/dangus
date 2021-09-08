@@ -26,3 +26,4 @@ def development():
 def production():
     return main_bot.route()
 
+# app.run(host = "0.0.0.0", port = 5000)
