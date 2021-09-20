@@ -11,13 +11,41 @@ import json
 import re
 import praw
 import datetime
+
 # import os
 import random
 import threading
 import pprint
 import urllib.request
 
+import pymysql.cursors
+
+logger = logging.getLogger("gunicorn.error")
+
+# cursor = cnx.cursor()
+# # Read a single record
+# query = "SELECT * FROM settings WHERE item = 'speech_mode'"
+# cursor.execute(query)
+# result = cursor.fetchone()
+# logger.info(result)
+# mode = result["value"]
+# update = "UPDATE settings SET value = %s WHERE item = %s"
+# cursor.execute(update, ("shakespeare", "speech_mode"))
+# cursor.execute(query)
+# result = cursor.fetchone()
+# mode = result["value"]
+
+
+# # temp=cursor.execute(query)
+# for result in cursor.execute(query):
+#     logger.info(cnx)
+#     logger.info(result)
+
+# cnx.close()
+
+
 btc_previous = []
+
 tired_responses = [
     "Don't let the nap get the best of you",
     "SLEEP",
@@ -25,13 +53,10 @@ tired_responses = [
     "idk have you tried more coffee?",
     "Each night, when I go to sleep, I die.",
 ]
-
-
 bot_id = None
 # app = Flask(__name__)
 # bot_id = os.environ['PROD_GROUPME_BOT_ID']
 # test_bot_id = os.environ['DEV_GROUPME_BOT_ID']
-logger = logging.getLogger("gunicorn.error")
 
 
 def make_pairs(corpus):
@@ -84,8 +109,12 @@ def makemusic():
         fp.write("this will be music for sure")
 
 
+class OutOfPandasException(Exception):
+    pass
+
+
 class Reddit:
-    def __init__(self):
+    def __init__(self, env):
         self.reddit = praw.Reddit(
             client_id=os.environ.get("REDDIT_CLIENT_ID"),
             client_secret=os.environ.get("REDDIT_SECRET_TOKEN"),
@@ -93,6 +122,7 @@ class Reddit:
             user_agent="dangusbot/0.0.1",
             username=os.environ.get("REDDIT_USERNAME"),
         )
+        self.env = env
 
     def subreddit(self, subreddit_query, num_posts=2):
         subreddit = self.reddit.subreddit(subreddit_query)
@@ -102,10 +132,20 @@ class Reddit:
         return arr
 
     def panda_of_the_day(self):
+        if self.get_panda_count() > 49:
+            raise OutOfPandasException()
+
         subreddit = self.reddit.subreddit("panda")
         num = random.randint(0, 49)
-        post = list(subreddit.top("all", limit=50))[num]
-        img_url = post.preview["images"][0]["source"]["url"]
+        panda_list = list(subreddit.top("all", limit=50))
+        img_url = panda_list[num].preview["images"][0]["source"]["url"]
+
+        while self.check_used_img_url(img_url):
+            logger.info(f"num = {num} and is a repeat image")
+            num = random.randint(0, 49)
+            img_url = panda_list[num].preview["images"][0]["source"]["url"]
+
+        self.store_used_img_url(img_url)
         urllib.request.urlretrieve(img_url, "temp.jpg")
         data = open("./temp.jpg", "rb").read()
         res = requests.post(
@@ -117,7 +157,26 @@ class Reddit:
             },
         )
         return res.json()["payload"]["url"]
-        print(res.content)
+        # print(res.content)
+
+    def get_panda_count(self):
+        with open(self.get_used_img_file(), "r") as used_img:
+            pre_filter_list = used_img.read().split("\n")
+            filtered_list = list(filter(lambda p: p.strip() != "", pre_filter_list))
+            return len(filtered_list)
+
+    def store_used_img_url(self, img_url):
+        url = img_url
+        with open(self.get_used_img_file(), "a+") as used_img:
+            used_img.write(url + "\n")
+
+    def check_used_img_url(self, img_url):
+        url = img_url
+        with open(self.get_used_img_file()) as f:
+            if url in f.read():
+                return True
+            else:
+                return False
 
     def getimg(self, subreddit_query):
         subreddit = self.reddit.subreddit(subreddit_query)
@@ -134,7 +193,7 @@ class Reddit:
 
 
 class Bot:
-    def __init__(self, bot_id, access_token, chat_filename):
+    def __init__(self, bot_id, access_token, chat_filename, env):
         self.bot_id = bot_id
         self.access_token = access_token
         self.message_text = None
@@ -145,10 +204,44 @@ class Bot:
         self.group_id = None
         self.fetch_group_id()
         self.members = []
-        self.reddit = Reddit()
+        self.reddit = Reddit(env)
         self.chat_filename = chat_filename
+        self.env = env
 
         logger.info(f"reddit= {self.reddit.subreddit('learnpython')}")
+
+        if self.env == "production":
+            database = os.environ.get("MYSQL_PROD_DATABASE")
+        else:
+            database = os.environ.get("MYSQL_DEV_DATABASE") 
+
+        self.cnx = pymysql.connect(
+            user=os.environ.get("MYSQL_USERNAME"),
+            password=os.environ.get("MYSQL_PASSWORD"),
+            host=os.environ.get("MYSQL_HOST"),
+            database=database,
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+
+    def get_used_img_file(self):
+        if self.env == "production":
+            return "used_img.txt"
+        else:
+            return "used_img_dev.txt"
+
+    def update_setting(self, item, value):
+        with self.cnx.cursor() as cursor:
+            # Read a single record
+            update = "UPDATE settings SET value = %s WHERE item = %s"
+            cursor.execute(update, (value, item))
+
+    def get_setting(self, item):
+        with self.cnx.cursor() as cursor:
+            # Read a single record
+            query = "SELECT * FROM settings WHERE item = %s"
+            cursor.execute(query, (item))
+            return cursor.fetchone()["value"]
 
     def fetch_group_id(self):
         params = {"token": self.access_token}
@@ -166,20 +259,47 @@ class Bot:
     def run(self):
         self.btc_trawler()
         self.get_current_members()
-        self.panda()
-    '''
-    def start_panda(self):
-        dt=datetime.datetime.now()
-        tomorrow = dt + datetime.timedelta(days=1)
-        time = datetime.datetime.combine(tomorrow, datetime.time.second) - dt
-        t = threading.Timer(time.seconds, self.panda)
-    '''
+        self.queue_panda()
+
+    def queue_panda(self):
+        dt = datetime.datetime.now()
+        seconds = dt.second
+        minutes = dt.minute
+        hours = dt.hour
+
+        minutes_in_seconds = 60 * minutes
+        hours_in_seconds = 60 * 60 * hours
+        tod_in_seconds = seconds + minutes_in_seconds + hours_in_seconds
+
+        launch_time_in_seconds = 20 * 60 * 60  # 3pm CST
+        full_day_in_seconds = 24 * 60 * 60
+        if tod_in_seconds <= launch_time_in_seconds:
+            seconds_to_launch = launch_time_in_seconds - tod_in_seconds
+        elif tod_in_seconds > launch_time_in_seconds:
+            seconds_to_launch = full_day_in_seconds - (
+                tod_in_seconds - launch_time_in_seconds
+            )
+
+        # We could do this more cleanly with timedelta, something like
+        # tomorrow = dt + datetime.timedelta(days=1)
+        # time = datetime.datetime.combine(tomorrow, datetime.time.second) - dt
+        # t = threading.Timer(time.seconds, self.panda)
+
+        t = threading.Timer(seconds_to_launch, self.panda)
+        t.start()
 
     def panda(self):
-        self.say("PANDA OF THE DAY: ")
-        self.say_img(self.reddit.panda_of_the_day())
-        t = threading.Timer(60*60*24, self.panda)
-        t.start()
+        try:
+            panda_url = self.reddit.panda_of_the_day()
+            self.say("PANDA OF THE DAY: ")
+            self.say_img(panda_url)
+
+        except OutOfPandasException:
+            self.say(
+                "Oops, we have exhausted the current libray of panda pictures. I need to be updated for new content."
+            )
+
+        self.queue_panda()
 
     def route(self):
         self.assign_flask_info()
@@ -200,9 +320,12 @@ class Bot:
                 num_posts = int(num_posts)
             if num_posts is None or num_posts > 5:
                 num_posts = 2
-            
+
             posts = self.reddit.subreddit(sub_call.group(1), num_posts=num_posts)
             for i, post in enumerate(posts):
+                if post["over_18"]:
+                    continue
+
                 self.say(f"Post {i+1}: {post[0]}")
                 self.say(f"https://www.reddit.com/{post[1]}")
 

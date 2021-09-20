@@ -132,6 +132,8 @@ pydeprecate==0.3.0
     # via pytorch-lightning
 pygments==2.10.0
     # via ipython
+pymysql==1.0.2
+    # via -r requirements.in
 pyparsing==2.4.7
     # via packaging
 python-dotenv==0.19.0

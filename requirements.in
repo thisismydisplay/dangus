@@ -10,3 +10,4 @@ black
 gunicorn
 ipython
 praw
+PyMySQL
